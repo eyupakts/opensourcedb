@@ -1,0 +1,108 @@
+---
+- hosts: db_hosts
+  vars:
+    oracle_base: /u01/oracle/client
+    oracle_home: /u01/oracle/product/11201/client_1
+#    patch_dir: /u01/oracle/client
+    remote_user: oracle
+  tasks:
+  remote_user: root
+  become: True
+  tasks:
+  - name: Create group
+    group:
+      name: oinstall
+      state: present
+  - name: Create user
+    user:
+      name: oracle
+      group: oinstall
+  - name: Create Local Repo File
+    file:
+      path: /u01/oracle/client
+      state: directory
+      owner: oracle
+      group: oinstall
+      mode: '0700'
+    ignore_errors: yes
+  - name: Install a list of packages 
+    yum:
+      name:
+        - compat-libstdc++
+        - compat-libcap1
+        - java
+      state: present
+    ignore_errors: yes
+#  - name: Download oracle
+#    shell:
+#      cmd:  wget -r --no-parent --reject "index.html*" http://127.0.0.1/dba/linux.x64_11gR2_client.zip -P /u01/oracle/client/
+#  - name: Extract client.zip
+#    unarchive:
+#      src: /u01/oracle/client/127.0.0.2/dba/linux.x64_11gR2_client.zip
+#      dest: /u01/oracle/client/
+#      remote_src: yes
+#      owner: oracle
+#      group: oinstall
+#      mode: '0755'
+  - name: Unpack Oracle 19c Client Software to the target server
+    remote_user: root
+    become: yes
+    become_user: oracle
+    unarchive:
+       src: /ansible/development/oracle/LINUX.X64_193000_client.zip
+       dest: /u01/oracle/client/
+       remote_src: no
+       owner: oracle
+       group: oinstall
+       mode: '0750'
+  - name: oracle home directory create 
+    file:
+      path: /u01/oracle/product/19201/Client_1
+      state: directory
+  - name: oracle home directory owner
+    file:
+      path: /u01/oracle/product/19201/Client_1
+      recurse: "yes"
+      owner: oracle
+      group: oinstall
+      mode: '0750'
+  - name: change new configuration client_install.rsp
+    lineinfile:
+      path: /u01/oracle/client/install/response/db_install.rsp
+      regexp: "{{ item.regexp }}"
+      line: "{{ item.line }}"
+    with_items:
+      - { regexp: '^ORACLE_HOME', line: 'ORACLE_HOME = /u01/oracle/product/11201/Client_1' }
+      - { regexp: '^ORACLE_HOME_NAME', line: 'ORACLE_HOME_NAME = OraClient11g_Home1' }
+      - { regexp: '^oracle.install.client.installType', line: 'oracle.install.client.installType= Administrator' }
+      - { regexp: '^SELECTED_LANGUAGES', line: 'SELECTED_LANGUAGES= en' }
+      - { regexp: '^INVENTORY_LOCATION', line: 'INVENTORY_LOCATION = /u01/oraInventory' }
+      - { regexp: '^ORACLE_BASE', line: 'ORACLE_BASE = /u01/oracle' }
+#  - name: oracle .bash_profile file add
+#    lineinfile:
+#      path: .bash_profile
+#      regexp: "ORACLE_HOME=/u01/oracle/product/11201/Client_1"
+#      regexp: "export 'ORACLE_HOME'"
+#      regexp: "PATH=$PATH:$HOME/.local/bin:$HOME/bin:$ORACLE_HOME/bin"
+#    state: yes
+#    ignore_errors: yes
+  - name: oracle installerowner directory change
+    file:
+      path: /u01/oracle/client/client/
+      state: directory
+      owner: oracle
+      group: oinstall
+      mode: '0700'
+  - name: Install Oracle Client Software
+    remote_user: root
+    become: yes
+    become_user: oracle
+    shell: su - oracle -c "/u01/oracle/client/./runInstaller -silent -responseFile /u01/oracle/client/install/response/db_install.rsp"
+    args:
+#      chdir: "{{ oracle_home }}/client"
+      creates: "{{ oracle_home }}"
+#    ignore_errors: True
+  - name: run root.sh
+    shell: "sudo {{ oracle_home }}/root.sh"
+    when: "'skipped' not in install_db_software.stdout"
+    become: true
