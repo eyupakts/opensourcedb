@@ -1,0 +1,29 @@
+---
+- name: Install and Conf. Cassandra
+  hosts: localhost
+  tasks:
+   - name: Create Local Repo File
+     file:
+       path: /localrepo
+       state: directory
+       owner: root
+       group: root
+       mode: '0755'
+   - name: Copy local repo file
+     copy:
+       src: '{{item.src}}'
+       dest: '{{item.dest}}'
+     loop:
+       - {src: /ansible/roles/db/cassandra/cassandra.service , dest: /etc/systemd/system/}
+       - {src: /ansible/roles/db/cassandra/cassandra-3.11.5-1.noarch.rpm , dest: /localrepo/}
+       - {src: /ansible/roles/db/cassandra/cassandra-3.11.5-1.src.rpm , dest: /localrepo/}
+       - {src: /ansible/roles/db/cassandra/cassandra-tools-3.11.5-1.noarch.rpm  , dest: /localrepo/}
+   - name: Install Cassandra
+     shell:
+       cmd: cd /localrepo ; rpm -ivh cassandra-*
+   - name: Start Cassandra
+     systemd:
+       name: cassandra
+       state: started
+       daemon_reload: yes
+       enabled: yes
