@@ -1,0 +1,34 @@
+---
+- name: Installing postgresql
+  hosts: database
+  tasks:
+  - name: Install postgresql
+    yum:
+      name: "{{packages}}"
+    vars:
+      packages:
+      - postgresql
+      - postgresql-server
+  - name: Create data directory if it does not exist
+    file:
+       path: '{{item.path}}'
+       state: directory
+       owner: postgres
+       group: postgres
+       mode: '0755'
+    loop:
+       - {path: /Products/pgsql/data}
+  - name: Edit postgresql.service
+    copy:
+       src: '{{item.src}}'
+       dest: '{{item.dest}}'
+    loop:
+       - {src: /ansible/roles/db/postgresql/postgresql.service  , dest: /usr/lib/systemd/system/}
+  - name: Install postgresql database
+    shell:
+       cmd: postgresql-setup initdb 
+  - name: Start postgresql
+    service:
+       name: postgresql.service
+       state: started
+       enabled: yes
