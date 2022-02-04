@@ -1,0 +1,80 @@
+---
+- name: Install and Conf. Mongodb
+  hosts: localhost
+  tasks:
+   - name: install createrepo 
+     shell:
+      cmd: yum install createrepo -y
+   - name: Create Local Repo File
+     file:
+       path: /localrepo
+       state: directory
+       owner: root
+       group: root
+       mode: '0755'
+   - name: Copy local repo file
+     copy:
+       src: '{{item.src}}'
+       dest: '{{item.dest}}'
+     loop:
+       - {src: /ansible/roles/db/mongo/mongo.repo , dest: /etc/yum.repos.d/}
+       - {src: /ansible/roles/db/mongo/mongodb-org-4.2.2-1.el7.x86_64.rpm , dest: /localrepo}
+       - {src: /ansible/roles/db/mongo/mongodb-org-server-4.2.2-1.el7.x86_64.rpm , dest: /localrepo}
+       - {src: /ansible/roles/db/mongo/mongodb-org-shell-4.2.2-1.el7.x86_64.rpm  , dest: /localrepo}
+       - {src: /ansible/roles/db/mongo/mongodb-org-mongos-4.2.2-1.el7.x86_64.rpm , dest: /localrepo}
+       - {src: /ansible/roles/db/mongo/mongodb-org-tools-4.2.2-1.el7.x86_64.rpm , dest: /localrepo}
+   - name: Disable SElinux
+     selinux:
+       state: disabled
+   - name: firewalld disable
+     service:
+       name: firewalld
+       state: stopped
+       enabled: no
+   - name: Createrepo
+     shell:
+       cmd: createrepo /localrepo
+   - name: Reposync
+     shell:
+       cmd: reposync -p /localrepo
+   - name: Install mongodb
+     yum:
+       name: "{{packages}}"
+     vars:
+       packages:
+       - mongodb-org-4.2.2
+       - mongodb-org-server-4.2.2
+       - mongodb-org-shell-4.2.2
+       - mongodb-org-mongos-4.2.2
+       - mongodb-org-tools-4.2.2 
+   - name: Create data and log directory if it does not exist
+     file:
+       path: '{{item.path}}'
+       state: directory
+       owner: mongod
+       group: mongod
+       mode: '0755'
+     loop:
+       - {path: /Products}
+       - {path: /Products/mongo_data}
+       - {path: /Products/mongodb}
+       - {path: /Products/mongo_data/db}
+       - {path: /Products/mongodb/logs}
+   - name: Edit mongod.conf
+     copy:
+       src: '{{item.src}}'
+       dest: '{{item.dest}}'
+     loop: 
+       - {src: /ansible/roles/db/mongo/mongod.conf , dest: /etc/}
+   - name: Add net conf.
+     blockinfile:
+       path: /etc/mongod.conf
+       block: |
+         net:
+           port: 27017
+           bindIp: 127.0.0.1,{{ ansible_default_ipv4.address }}
+   - name: Start Mongodb
+     service:
+       name: mongod
+       state: started
+       enabled: yes
