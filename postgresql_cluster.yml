@@ -1,0 +1,228 @@
+---
+- hosts: db_master
+  remote_user: root
+  become: True
+  vars:
+   rep_user: ‘postgres’
+   rep_pass: ‘postgres’
+  tasks:
+  - name: Create Local Repo File
+    file:
+      path: /localrepo
+      state: directory
+      owner: root
+      group: root
+      mode: '0755'
+    ignore_errors: yes
+  - name: Download Postgresql
+    shell:
+      cmd:  wget -r --no-parent --reject "index.html*" http://127.0.0.1/tools/db/postgresql/ -P /localrepo/
+  - name: Install postgresql
+    shell:
+      cmd: cd /localrepo/127.0.0.2/tools/cdb/postgresql/ ; rpm -ivh  postgre*
+    ignore_errors: yes
+  - name: Enable database service on boot
+    systemd:
+      name: postgresql-12
+      enabled: yes
+    ignore_errors: yes
+  - name: Create Data File
+    file:
+      path: /Products/pgsql/data/12/data
+      state: directory
+      owner: postgres
+      group: postgres
+      mode: '0755'
+  - name: Create Archive File
+    file:
+      path: /Products/pgsql/archive/
+      state: directory
+      owner: postgres
+      group: postgres
+      mode: '0755' 
+  - name: copy service file
+    copy:
+      remote_src: true
+      src: /usr/lib/systemd/system/postgresql-12.service
+      dest: /etc/systemd/system/
+    ignore_errors: yes
+  - name: Add postgre service Environment
+    lineinfile:
+      path: /etc/systemd/system/postgresql-12.service
+      regexp: '^Environment=PGDATA=/var/lib/pgsql/12/data/\s'
+      line: 'Environment=PGDATA=/Products/pgsql/data/12/data'
+  - name: reload systemctl services
+    command: 'systemctl daemon-reload'
+#  - name: daemon-reload service file
+#    systemd:
+#       name: postgresql-12
+#       daemon_reload: yes
+#       state: restarted
+#       enabled: yes
+  - name: initialize postgresql
+    shell: /usr/pgsql-12/bin/postgresql-12-setup initdb
+#    ignore_errors: true
+    changed_when: no
+  - name: Start postgresql
+    systemd:
+       name: postgresql-12
+       state: restarted
+       enabled: yes
+  - name: Create replication user
+    become: yes
+    become_user: postgres
+    shell: psql -c "ALTER ROLE postgres WITH PASSWORD 'postgres';"
+  - name: change new configuration "postgresql.conf"
+    lineinfile:
+      path: /Products/pgsql/data/12/data/postgresql.conf
+      regexp: "{{ item.regexp }}"
+      line: "{{ item.line }}"
+    with_items:
+      - { regexp: "#listen_addresses = 'localhost'", line: "listen_addresses = '*'" }
+      - { regexp: "#wal_level = replica", line: 'wal_level = replica' }
+      - { regexp: "#archive_mode = off", line: 'archive_mode = on' }
+      - { regexp: "#archive_command = ''", line: "archive_command = 'cp %p /Products/pgsql/archive/%f'" }
+      - { regexp: "#max_wal_senders = 10", line: 'max_wal_senders = 10' }
+      - { regexp: "#wal_keep_segments = 0", line: 'wal_keep_segments = 10' }
+      - { regexp: "#synchronous_standby_names = ''", line: "synchronous_standby_names = 'slave01'" }
+  - name: change new configuration "pg_hba.conf"
+    lineinfile:
+      path: /Products/pgsql/data/12/data/pg_hba.conf
+      regexp: "host    replication     all             127.0.0.1/32            ident"
+      state: absent
+  - name: add new configuration to "pg_hba.conf"
+    blockinfile:
+      path: /Products/pgsql/data/12/data/pg_hba.conf
+      block: |
+           host    replication     postgres        127.0.0.1/32            md5
+           host    replication     postgres        127.0.0.2/24           md5
+      owner: postgres
+      group: postgres
+      mode: '0755'
+  - name: Restart database
+    service:
+      state: restarted
+      name: postgresql-12
+#  - name: Connect to test database and remove an existing user's password
+#    postgresql_user:
+#      db: postgres
+#      user: postgres
+#      password: "postgres"
+#  - name: Create replication user
+#    become: yes
+#    become_user: postgres
+#    shell: psql -c "ALTER ROLE postgres WITH PASSWORD 'postgres';"
+  - name: pgpass file create
+    blockinfile:
+      create: yes
+      path: /var/lib/pgsql/.pgpass
+      block: |
+        127.0.0.3:5432:*:postgres:postgres
+      owner: postgres
+      group: postgres
+      mode: '0600'
+- hosts: db_slaves
+  remote_user: root
+  become: True
+  vars:
+    rep_user: ‘postgres’
+    rep_pass: ‘postgres’
+  tasks:
+  - name: Create Local Repo File
+    file:
+      path: /localrepo
+      state: directory
+      owner: root
+      group: root
+      mode: '0755'
+  - name: Download Postgresql
+    shell:
+      cmd:  wget -r --no-parent --reject "index.html*" http://127.0.0.1/tools/db/postgresql/ -P /localrepo/
+  - name: Install postgresql
+    shell:
+      cmd: cd /localrepo/1127.0.0.1/tools/db/postgresql/ ; rpm -ivh  postgre*
+    ignore_errors: yes
+  - name: Enable database service on boot
+    systemd:
+      name: postgresql-12
+      enabled: yes
+    ignore_errors: yes
+  - name: Create Data File
+    file:
+      path: /Products/pgsql/data/12/data
+      state: directory
+      owner: postgres
+      group: postgres
+      mode: '0755'
+  - name: Create Archive File
+    file:
+      path: /Products/pgsql/archive/
+      state: directory
+      owner: postgres
+      group: postgres
+      mode: '0755'
+  - name: Owner pgsql
+    file:
+      path: /Products/
+      owner: postgres
+      group: postgres
+      mode: '0755'
+  - name: copy service file
+    copy:
+      remote_src: true
+      src: /usr/lib/systemd/system/postgresql-12.service
+      dest: /etc/systemd/system/
+    ignore_errors: yes
+  - name: Add postgre service Environment
+    lineinfile:
+      path: /etc/systemd/system/postgresql-12.service
+      regexp: '^Environment=PGDATA=/var/lib/pgsql/12/data/\s'
+      line: 'Environment=PGDATA=/Products/pgsql/data/12/data'
+#  - name: daemon-reload service file
+#    service:
+#       name: postgresql-12
+#       daemon_reload: yes
+#       state: restarted
+#       enabled: yes
+  - name: reload systemctl services
+    command: 'systemctl daemon-reload'
+  - name: pgpass file create
+    blockinfile:
+      create: yes
+      path: /var/lib/pgsql/.pgpass
+      block: |
+        127.0.0.3:5432:*:postgres:postgres
+      owner: postgres
+      group: postgres
+      mode: '0600'
+#  - name: initialize postgresql
+#    shell: /usr/pgsql-12/bin/postgresql-12-setup initdb
+#    ignore_errors: true
+#    changed_when: no
+  - name: pg_basebackup configuration
+    shell: su - postgres -c "/usr/pgsql-12/bin/pg_basebackup -D  /Products/pgsql/data/12/data/ -c       fast -X fetch  -Ft -z  -R -h 127.0.0.3 -p 5432 -U postgres"
+    ignore_errors: yes
+#  - name: add new configuration to "recovery.conf"
+#    blockinfile:
+#      create: yes
+#      path: /Products/pgsql/data/12/data/recovery.conf
+#      block: |
+#          standby_mode = 'on'
+#          primary_conninfo = 'user=postgres host=127.0.0.3 port=5432'
+  - name: Extract base.targx into 
+    unarchive:
+      src: /Products/pgsql/data/12/data/base.tar.gz
+      dest: /Products/pgsql/data/12/data/
+      remote_src: yes
+  - name: Create Data File
+    file:
+      path: /Products/pgsql/data/12/data
+      state: directory
+      owner: postgres
+      group: postgres
+      mode: '0700'
+  - name: Starter database
+    service:
+      name: postgresql-12
+      state: started
+      enabled: yes
